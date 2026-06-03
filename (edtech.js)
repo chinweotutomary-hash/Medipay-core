@@ -1,0 +1,68 @@
+import express from 'express';
+import { sendWhatsAppBroadcast } from './whatsappService.js'; // Extended messaging helper
+
+const router = express.Router();
+
+// Mock database storage for your hackathon demo state
+let healthTipsDatabase = [
+  {
+    tipId: "MP-EDTECH-042",
+    seasonalTag: "Rainy Season / Malaria Alert",
+    adminStatus: "PENDING_REVIEW",
+    whatsappPayload: {
+      english: "Good morning! As the rains pick up, remember to clear stagnant water around your shops to stop mosquitoes from breeding. Sleep under a net to keep your family safe!",
+      pidgin: "Good morning o! As rain dey fall everywhere so, make we try clear all those dirty water wey stand block near our shop make mosquito no go block there lay egg. Always sleep inside net make body fit dey ok!",
+      yoruba: "E kaaro! Bi ojo se n rọ yi, ẹ jọọ jẹ ki a gbale, ki a si mu gbogbo omi to duro gba kuro nitosi ile tabi ṣọọbu wa lati dẹkun ibalopo ẹfon..."
+    }
+  }
+];
+
+/**
+ * POST /api/v1/edtech/review
+ * Allows administrators to APPROVE or REWIND (re-queue) dynamic health tips
+ */
+router.post('/review', async (req, res) => {
+  try {
+    const { tipId, action } = req.body; // action can be 'APPROVE' or 'REWIND'
+
+    const targetTip = healthTipsDatabase.find(t => t.tipId === tipId);
+
+    if (!targetTip) {
+      return res.status(404).json({ success: false, message: "Health tip payload not found." });
+    }
+
+    if (action === 'APPROVE') {
+      targetTip.adminStatus = "APPROVED_AND_BROADCASTED";
+      console.log(`[EDTECH ADMIN] Tip ${tipId} APPROVED. Launching simultaneous background WhatsApp blast...`);
+
+      // Asynchronously trigger the broadcast loop across your user base
+      sendWhatsAppBroadcast(targetTip.whatsappPayload).catch(err => 
+        console.error("[BROADCAST ERROR] Failed to push seasonal message:", err)
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "Tip approved successfully. Broadcast pipeline initiated.",
+        updatedTip: targetTip
+      });
+    }
+
+    if (action === 'REWIND') {
+      targetTip.adminStatus = "REWOUND_TO_QUEUE";
+      console.log(`[EDTECH ADMIN] Tip ${tipId} REWOUND. Cycling back to the pending queue for re-editing.`);
+
+      return res.status(200).json({
+        success: true,
+        message: "Tip successfully rewound back to pending queue states.",
+        updatedTip: targetTip
+      });
+    }
+
+  } catch (error) {
+    console.error("[EDTECH CRITICAL] Failed to execute admin command thread:", error);
+    return res.status(500).json({ success: false, message: "Internal EdTech Router Exception" });
+  }
+});
+
+export default router;
+
